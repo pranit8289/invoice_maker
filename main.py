@@ -29,7 +29,9 @@ def format_address(address, max_length=50):
 # Function to generate invoice PDF
 def generate_invoice(data):
     invoice_number = str(data["Invoice Number"])
-    pdf_filename = f"{output_folder}/Invoice_{invoice_number}.pdf"
+    month_year = data['Invoice Date'].strftime('%b_%Y')
+    com_name = str(data["Buyer Name"])
+    pdf_filename = f"{output_folder}/Invoice_{invoice_number}_{month_year}_{com_name}.pdf"
     
     c = canvas.Canvas(pdf_filename, pagesize=A4)
     width, height = A4
@@ -67,18 +69,18 @@ def generate_invoice(data):
     c.setFont("Helvetica", 10)
     c.drawString(300, height - 200, f"{data['Buyer Name']}")
     y_position = height - 220
-    for line in format_address(data['Buyer Address']):
-        c.drawString(300, y_position, line)
-        y_position -= 20
+    # for line in format_address(data['Buyer Address']):
+    #     c.drawString(300, y_position, line)
+    #     y_position -= 20
     c.drawString(300, y_position, f"GSTIN: {data['Buyer GSTIN']}")
-    y_position -= 20
+    y_position -= 80
 
     # Table Header
     table_data = [["Item", "Quantity", "Unit Price", "Total Amount"]]
     
     # Adding Items
     table_data.append([
-        data['Item Name'], data['Quantity'], f"{data['Unit Price']:.2f}", f"{data['Total Amount']:.2f}"
+        data['Item Name'], data['Quantity'], f"{data['Unit Price']:.2f}", f"{data['Base Amount']:.2f}"
     ])
     
     # GST Calculation
@@ -89,9 +91,20 @@ def generate_invoice(data):
     sgst = data.get('SGST', 0)
     igst = data.get('IGST', 0)
     extras = data.get('Extra', 0)
+    discount = data.get('Discount', 0)
 
     if extras > 0:
-        table_data.append(["Extra", "1", f"{extras}", "{:.2f}".format(extras)])
+        extra_Qty = data["Extra Qty"]
+        table_data.append([data["Label Name"], f"{extra_Qty}", f"{data['Extra Price']}", "{:.2f}".format(extras)])
+
+    table_data.append(["Base Price", "", "", "{:.2f}".format(extras + data['Base Amount'])])
+    
+    if discount:
+        table_data.append(["Discount", "1", f"{data['Discount']}", "{:.2f}".format(extras + data['Discount'])])
+
+    table_data.append(["Final Base Price", "", "", "{:.2f}".format(extras + data['Total Amount'])])
+
+    
   
     if cgst > 0:
         table_data.append(["CGST", "1", f"{cgst}%", "{:.2f}".format((data['Total Amount'] * cgst) / 100)])
@@ -100,7 +113,7 @@ def generate_invoice(data):
     if igst > 0:
         table_data.append(["IGST", "1", f"{igst}%", "{:.2f}".format((data['Total Amount'] * igst) / 100)])
     
-    table_data.append(["GST", "1", f"{gst_rate}%", f"{gst_amount:.2f}"])  
+    # table_data.append(["GST", "1", f"{gst_rate}%", f"{gst_amount:.2f}"])  
     table_data.append(["Grand Total", "", "", f"{data['Grand Total']:.2f}"])
 
     
@@ -113,24 +126,31 @@ def generate_invoice(data):
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
         ('GRID', (0, 0), (-1, -1), 1, colors.black),
-        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold', 12)  # Bold font for last row (Grand Total)
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold', 12),  # Bold font for last row (Grand Total)
     ]))
     table.wrapOn(c, width, height)
     if extras > 0:
         table.drawOn(c, 50, height - 410)
+    elif discount>0:
+        table.drawOn(c, 50, height - 430)
+    elif extras and discount>0:
+        table.drawOn(c, 50, height - 450)
     else:
         table.drawOn(c, 50, height - 390)
 
     # Payment Method
     c.setFont("Helvetica-Bold", 12)
-    c.drawString(50, height - 440, "Payment Method: Bank Transfer")
+    if discount>0:
+        table.drawOn(c, 50, height - 430)
+    else:
+        c.drawString(50, height - 440, "Payment Method: Bank Transfer")
 
     # Bank Details
     c.setFont("Helvetica-Bold", 12)
-    c.drawString(50, height - 460, "Bank Account Details:")
+    c.drawString(50, height - 455, "Bank Account Details:")
     
     c.setFont("Helvetica", 10)
-    y_position = height - 480
+    y_position = height - 465
     for line in bank_details.split("\n"):
         c.drawString(38, y_position, line)
         y_position -= 10
@@ -146,7 +166,7 @@ def generate_invoice(data):
 
 if __name__ == "__main__":
 
-    excel_file = "invoice_data.xlsx"
+    excel_file = "invoice_data_May_2025.xlsx"
     df = pd.read_excel(excel_file)
 
     # Company Logo Path
@@ -154,6 +174,7 @@ if __name__ == "__main__":
 
     bank_details = """
     Cheque to be drawn in the favor of URBANLEAFSPACE LLP
+
     Online Transfer Details:
     Acc Name : URBANLEAF SPACE LLP
     Account Number: 539705000135
@@ -167,3 +188,4 @@ if __name__ == "__main__":
         generate_invoice(row)
 
     print(f"All invoices saved in the '{output_folder}' folder.")
+    
